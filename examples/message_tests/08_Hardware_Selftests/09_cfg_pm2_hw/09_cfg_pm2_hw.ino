@@ -1,6 +1,8 @@
 /*!
- * @file cfg_pm2_hw.ino
+ * @file 09_cfg_pm2_hw.ino
  * @brief Hardware test for CFG-PM2 (Extended Power Management)
+ *
+ * Written by Limor 'ladyada' Fried with assistance from Claude Code
  */
 
 #include <Adafruit_UBX.h>
@@ -11,16 +13,20 @@ Adafruit_UBX ubx(ddc);
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial) delay(10);
+  while (!Serial)
+    delay(10);
 
-  Serial.println(F("CFG-PM2 Hardware Test"));
-  Serial.println(F("====================="));
+  Serial.println(F("=== CFG-PM2 Hardware Test ==="));
 
   if (!ddc.begin()) {
-    Serial.println(F("FAIL: GPS not found"));
-    while (1) delay(10);
+    halt(F("GPS not found on I2C"));
   }
-  ubx.begin();
+  Serial.println(F("GPS module connected"));
+
+  if (!ubx.begin()) {
+    halt(F("UBX parser init failed"));
+  }
+
   delay(500);
   ubx.setUBXOnly(UBX_PORT_DDC, true, 1000);
 
@@ -44,4 +50,15 @@ void setup() {
 
 void loop() {
   delay(1000);
+}
+
+/**************************************************************************/
+/* Helper functions                                                       */
+/**************************************************************************/
+
+void halt(const __FlashStringHelper *msg) {
+  Serial.print(F("HALT: "));
+  Serial.println(msg);
+  while (1)
+    delay(10);
 }

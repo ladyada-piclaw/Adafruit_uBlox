@@ -1,5 +1,5 @@
 /*!
- * @file cfg_sbas_test.ino
+ * @file 09_cfg_sbas_test.ino
  *
  * Message test: Poll UBX-CFG-SBAS, display SBAS settings,
  * toggle enable, verify.
@@ -15,19 +15,72 @@ Adafruit_UBX ubx(ddc);
 
 bool tests_run = false;
 
-void printTestResult(const __FlashStringHelper* name, bool pass) {
-  Serial.print(F("  ["));
-  if (pass) {
-    Serial.print(F("PASS"));
-  } else {
-    Serial.print(F("FAIL"));
+void setup() {
+  Serial.begin(115200);
+  while (!Serial)
+    delay(10);
+
+  Serial.println(F("=== UBX-CFG-SBAS Message Test ==="));
+
+  if (!ddc.begin()) {
+    halt(F("Could not connect to GPS module on I2C"));
   }
+  Serial.println(F("GPS module connected on I2C"));
+
+  if (!ubx.begin()) {
+    halt(F("UBX parser init failed"));
+  }
+
+  delay(500);
+
+  UBXSendStatus status = ubx.setUBXOnly(UBX_PORT_DDC, true, 1000);
+  if (status != UBX_SEND_SUCCESS) {
+    Serial.print(F("WARNING: setUBXOnly status: "));
+    Serial.println(status);
+  } else {
+    Serial.println(F("UBX-only mode set on DDC port"));
+  }
+
+  runTests();
+  tests_run = true;
+}
+
+void loop() {
+  UBX_CFG_SBAS_t sbas;
+
+  if (!ubx.pollCfgSbas(&sbas)) {
+    Serial.println(F("CFG-SBAS poll failed (timeout)"));
+    delay(5000);
+    return;
+  }
+
+  Serial.println(F("--- CFG-SBAS ---"));
+  printSbasConfig(&sbas);
+  Serial.println();
+
+  delay(5000);
+}
+
+/**************************************************************************/
+/* Helper functions                                                       */
+/**************************************************************************/
+
+void halt(const __FlashStringHelper *msg) {
+  Serial.print(F("HALT: "));
+  Serial.println(msg);
+  while (1)
+    delay(10);
+}
+
+void printTestResult(const __FlashStringHelper *name, bool pass) {
+  Serial.print(F("  ["));
+  Serial.print(pass ? F("PASS") : F("FAIL"));
   Serial.print(F("] "));
   Serial.print(name);
   Serial.print(F(": "));
 }
 
-void printSbasConfig(UBX_CFG_SBAS_t* sbas) {
+void printSbasConfig(UBX_CFG_SBAS_t *sbas) {
   Serial.print(F("  mode: 0x"));
   Serial.println(sbas->mode, HEX);
   Serial.print(F("    enabled: "));
@@ -59,7 +112,6 @@ void runTests() {
   Serial.println();
   Serial.println(F("Running tests..."));
 
-  // Test 1: Poll CFG-SBAS
   UBX_CFG_SBAS_t sbas;
   bool poll_ok = ubx.pollCfgSbas(&sbas);
   printTestResult(F("poll_cfg_sbas"), poll_ok);
@@ -69,27 +121,25 @@ void runTests() {
     printSbasConfig(&sbas);
   }
 
-  // Test 2: Verify struct size
   bool size_ok = (sizeof(UBX_CFG_SBAS_t) == 8);
   printTestResult(F("struct_size"), size_ok);
   Serial.print(sizeof(UBX_CFG_SBAS_t));
   Serial.println(F(" bytes"));
-  if (size_ok) passed++;
+  if (size_ok)
+    passed++;
 
-  // Save original state
   bool original_enabled = (sbas.mode & UBX_SBAS_MODE_ENABLED) != 0;
   Serial.print(F("  Original SBAS state: "));
   Serial.println(original_enabled ? F("enabled") : F("disabled"));
 
-  // Test 3: Toggle SBAS
   bool toggle_ok = ubx.enableSBAS(!original_enabled);
   printTestResult(F("toggle_sbas"), toggle_ok);
   Serial.println(toggle_ok ? F("OK") : F("FAILED"));
-  if (toggle_ok) passed++;
+  if (toggle_ok)
+    passed++;
 
   delay(100);
 
-  // Test 4: Verify change and restore
   UBX_CFG_SBAS_t sbas_verify;
   bool verify_ok = ubx.pollCfgSbas(&sbas_verify);
   if (verify_ok) {
@@ -98,9 +148,9 @@ void runTests() {
     printTestResult(F("verify_toggle"), changed);
     Serial.print(F("now "));
     Serial.println(new_state ? F("enabled") : F("disabled"));
-    if (changed) passed++;
+    if (changed)
+      passed++;
 
-    // Restore original
     ubx.enableSBAS(original_enabled);
   } else {
     printTestResult(F("verify_toggle"), false);
@@ -113,43 +163,4 @@ void runTests() {
   Serial.print(F("/"));
   Serial.print(total);
   Serial.println(F(" tests passed"));
-}
-
-void setup() {
-  Serial.begin(115200);
-  while (!Serial)
-    delay(10);
-
-  Serial.println(F("UBX-CFG-SBAS Message Test"));
-  Serial.println(F("=========================="));
-
-  if (!ddc.begin()) {
-    Serial.println(F("FAIL: Could not connect to GPS module!"));
-    while (1)
-      delay(10);
-  }
-  Serial.println(F("GPS module connected on I2C"));
-
-  if (!ubx.begin()) {
-    Serial.println(F("FAIL: UBX parser init failed!"));
-    while (1)
-      delay(10);
-  }
-
-  delay(500);
-
-  UBXSendStatus status = ubx.setUBXOnly(UBX_PORT_DDC, true, 1000);
-  if (status != UBX_SEND_SUCCESS) {
-    Serial.print(F("WARNING: setUBXOnly status: "));
-    Serial.println(status);
-  } else {
-    Serial.println(F("UBX-only mode set on DDC port"));
-  }
-
-  runTests();
-  tests_run = true;
-}
-
-void loop() {
-  delay(1000);
 }

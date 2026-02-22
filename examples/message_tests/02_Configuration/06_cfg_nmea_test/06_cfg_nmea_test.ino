@@ -1,5 +1,5 @@
 /*!
- * @file cfg_nmea_test.ino
+ * @file 06_cfg_nmea_test.ino
  *
  * Message test: Poll UBX-CFG-NMEA, display settings,
  * toggle high precision mode, verify.
@@ -15,30 +15,89 @@ Adafruit_UBX ubx(ddc);
 
 bool tests_run = false;
 
-void printTestResult(const __FlashStringHelper* name, bool pass) {
-  Serial.print(F("  ["));
-  if (pass) {
-    Serial.print(F("PASS"));
-  } else {
-    Serial.print(F("FAIL"));
+void setup() {
+  Serial.begin(115200);
+  while (!Serial)
+    delay(10);
+
+  Serial.println(F("=== UBX-CFG-NMEA Message Test ==="));
+
+  if (!ddc.begin()) {
+    halt(F("Could not connect to GPS module on I2C"));
   }
+  Serial.println(F("GPS module connected on I2C"));
+
+  if (!ubx.begin()) {
+    halt(F("UBX parser init failed"));
+  }
+
+  delay(500);
+
+  UBXSendStatus status = ubx.setUBXOnly(UBX_PORT_DDC, true, 1000);
+  if (status != UBX_SEND_SUCCESS) {
+    Serial.print(F("WARNING: setUBXOnly status: "));
+    Serial.println(status);
+  } else {
+    Serial.println(F("UBX-only mode set on DDC port"));
+  }
+
+  runTests();
+  tests_run = true;
+}
+
+void loop() {
+  UBX_CFG_NMEA_t nmea;
+
+  if (!ubx.pollCfgNmea(&nmea)) {
+    Serial.println(F("CFG-NMEA poll failed (timeout)"));
+    delay(5000);
+    return;
+  }
+
+  Serial.println(F("--- CFG-NMEA ---"));
+  printNmeaConfig(&nmea);
+  Serial.println();
+
+  delay(5000);
+}
+
+/**************************************************************************/
+/* Helper functions                                                       */
+/**************************************************************************/
+
+void halt(const __FlashStringHelper *msg) {
+  Serial.print(F("HALT: "));
+  Serial.println(msg);
+  while (1)
+    delay(10);
+}
+
+void printTestResult(const __FlashStringHelper *name, bool pass) {
+  Serial.print(F("  ["));
+  Serial.print(pass ? F("PASS") : F("FAIL"));
   Serial.print(F("] "));
   Serial.print(name);
   Serial.print(F(": "));
 }
 
-const char* getNmeaVersionName(uint8_t ver) {
+const char *getNmeaVersionName(uint8_t ver) {
   switch (ver) {
-    case 0x21: return "2.1";
-    case 0x23: return "2.3";
-    case 0x40: return "4.0";
-    case 0x41: return "4.10";
-    case 0x4B: return "4.11";
-    default: return "Unknown";
+    case 0x21:
+      return "2.1";
+    case 0x23:
+      return "2.3";
+    case 0x40:
+      return "4.0";
+    case 0x41:
+      return "4.10";
+    case 0x4B:
+      return "4.11";
+    default:
+      return "Unknown";
   }
 }
 
-void printNmeaConfig(UBX_CFG_NMEA_t* nmea) {
+void printNmeaConfig(UBX_CFG_NMEA_t *nmea) {
   Serial.print(F("  filter: 0x"));
   Serial.println(nmea->filter, HEX);
   Serial.print(F("  nmeaVersion: 0x"));
@@ -71,7 +130,6 @@ void runTests() {
   Serial.println();
   Serial.println(F("Running tests..."));
 
-  // Test 1: Poll CFG-NMEA
   UBX_CFG_NMEA_t nmea;
   bool poll_ok = ubx.pollCfgNmea(&nmea);
   printTestResult(F("poll_cfg_nmea"), poll_ok);
@@ -81,26 +139,24 @@ void runTests() {
     printNmeaConfig(&nmea);
   }
 
-  // Test 2: Verify version field
   bool ver_ok = poll_ok && (nmea.version == 0x01);
   printTestResult(F("version_v1"), ver_ok);
   Serial.print(F("0x"));
   Serial.println(nmea.version, HEX);
-  if (ver_ok) passed++;
+  if (ver_ok)
+    passed++;
 
-  // Save original flags
   uint8_t original_flags = nmea.flags;
 
-  // Test 3: Toggle compat mode
   nmea.flags ^= UBX_NMEA_FLAGS_COMPAT;
   bool set_ok = ubx.setCfgNmea(&nmea);
   printTestResult(F("set_toggle_compat"), set_ok);
   Serial.println(set_ok ? F("OK") : F("FAILED"));
-  if (set_ok) passed++;
+  if (set_ok)
+    passed++;
 
   delay(100);
 
-  // Test 4: Verify change and restore
   UBX_CFG_NMEA_t nmea_verify;
   bool verify_ok = ubx.pollCfgNmea(&nmea_verify);
   if (verify_ok) {
@@ -108,9 +164,9 @@ void runTests() {
                    (original_flags & UBX_NMEA_FLAGS_COMPAT);
     printTestResult(F("verify_change"), changed);
     Serial.println(changed ? F("OK") : F("no change"));
-    if (changed) passed++;
+    if (changed)
+      passed++;
 
-    // Restore original
     nmea_verify.flags = original_flags;
     ubx.setCfgNmea(&nmea_verify);
   } else {
@@ -124,43 +180,4 @@ void runTests() {
   Serial.print(F("/"));
   Serial.print(total);
   Serial.println(F(" tests passed"));
-}
-
-void setup() {
-  Serial.begin(115200);
-  while (!Serial)
-    delay(10);
-
-  Serial.println(F("UBX-CFG-NMEA Message Test"));
-  Serial.println(F("=========================="));
-
-  if (!ddc.begin()) {
-    Serial.println(F("FAIL: Could not connect to GPS module!"));
-    while (1)
-      delay(10);
-  }
-  Serial.println(F("GPS module connected on I2C"));
-
-  if (!ubx.begin()) {
-    Serial.println(F("FAIL: UBX parser init failed!"));
-    while (1)
-      delay(10);
-  }
-
-  delay(500);
-
-  UBXSendStatus status = ubx.setUBXOnly(UBX_PORT_DDC, true, 1000);
-  if (status != UBX_SEND_SUCCESS) {
-    Serial.print(F("WARNING: setUBXOnly status: "));
-    Serial.println(status);
-  } else {
-    Serial.println(F("UBX-only mode set on DDC port"));
-  }
-
-  runTests();
-  tests_run = true;
-}
-
-void loop() {
-  delay(1000);
 }

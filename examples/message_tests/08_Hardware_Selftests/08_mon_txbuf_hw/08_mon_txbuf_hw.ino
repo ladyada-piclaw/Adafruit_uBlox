@@ -1,6 +1,8 @@
 /*!
- * @file mon_txbuf_hw.ino
+ * @file 08_mon_txbuf_hw.ino
  * @brief Hardware test for MON-TXBUF (Transmitter Buffer Status)
+ *
+ * Written by Limor 'ladyada' Fried with assistance from Claude Code
  */
 
 #include <Adafruit_UBX.h>
@@ -11,16 +13,20 @@ Adafruit_UBX ubx(ddc);
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial) delay(10);
+  while (!Serial)
+    delay(10);
 
-  Serial.println(F("MON-TXBUF Hardware Test"));
-  Serial.println(F("======================="));
+  Serial.println(F("=== MON-TXBUF Hardware Test ==="));
 
   if (!ddc.begin()) {
-    Serial.println(F("FAIL: GPS not found"));
-    while (1) delay(10);
+    halt(F("GPS not found on I2C"));
   }
-  ubx.begin();
+  Serial.println(F("GPS module connected"));
+
+  if (!ubx.begin()) {
+    halt(F("UBX parser init failed"));
+  }
+
   delay(500);
   ubx.setUBXOnly(UBX_PORT_DDC, true, 1000);
 
@@ -28,7 +34,7 @@ void setup() {
   if (ubx.pollMonTxbuf(&txbuf)) {
     Serial.println(F("PASS: MON-TXBUF poll OK"));
     Serial.println(F("  Port   Pending  Use%  Peak%"));
-    const char* names[] = {"DDC", "UART1", "UART2", "USB", "SPI", "P5"};
+    const char *names[] = {"DDC", "UART1", "UART2", "USB", "SPI", "P5"};
     for (uint8_t i = 0; i < 6; i++) {
       Serial.print(F("  "));
       Serial.print(names[i]);
@@ -51,14 +57,31 @@ void setup() {
 }
 
 void loop() {
-  delay(2000);
   UBX_MON_TXBUF_t txbuf;
-  if (ubx.pollMonTxbuf(&txbuf)) {
-    Serial.print(F("DDC pend="));
-    Serial.print(txbuf.pending[0]);
-    Serial.print(F(" total="));
-    Serial.print(txbuf.tUsage);
-    Serial.print(F("% err=0x"));
-    Serial.println(txbuf.errors, HEX);
+
+  if (!ubx.pollMonTxbuf(&txbuf)) {
+    Serial.println(F("MON-TXBUF poll failed (timeout)"));
+    delay(2000);
+    return;
   }
+
+  Serial.print(F("DDC pend="));
+  Serial.print(txbuf.pending[0]);
+  Serial.print(F(" total="));
+  Serial.print(txbuf.tUsage);
+  Serial.print(F("% err=0x"));
+  Serial.println(txbuf.errors, HEX);
+
+  delay(2000);
+}
+
+/**************************************************************************/
+/* Helper functions                                                       */
+/**************************************************************************/
+
+void halt(const __FlashStringHelper *msg) {
+  Serial.print(F("HALT: "));
+  Serial.println(msg);
+  while (1)
+    delay(10);
 }

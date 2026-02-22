@@ -1,5 +1,5 @@
 /*!
- * @file cfg_rxm_test.ino
+ * @file 10_cfg_rxm_test.ino
  *
  * Message test: Poll UBX-CFG-RXM, toggle power save mode.
  *
@@ -14,19 +14,72 @@ Adafruit_UBX ubx(ddc);
 
 bool tests_run = false;
 
-void printTestResult(const __FlashStringHelper* name, bool pass) {
-  Serial.print(F("  ["));
-  if (pass) {
-    Serial.print(F("PASS"));
-  } else {
-    Serial.print(F("FAIL"));
+void setup() {
+  Serial.begin(115200);
+  while (!Serial)
+    delay(10);
+
+  Serial.println(F("=== UBX-CFG-RXM Message Test ==="));
+
+  if (!ddc.begin()) {
+    halt(F("Could not connect to GPS module on I2C"));
   }
+  Serial.println(F("GPS module connected on I2C"));
+
+  if (!ubx.begin()) {
+    halt(F("UBX parser init failed"));
+  }
+
+  delay(500);
+
+  UBXSendStatus status = ubx.setUBXOnly(UBX_PORT_DDC, true, 1000);
+  if (status != UBX_SEND_SUCCESS) {
+    Serial.print(F("WARNING: setUBXOnly status: "));
+    Serial.println(status);
+  } else {
+    Serial.println(F("UBX-only mode set on DDC port"));
+  }
+
+  runTests();
+  tests_run = true;
+}
+
+void loop() {
+  UBX_CFG_RXM_t rxm;
+
+  if (!ubx.pollCfgRxm(&rxm)) {
+    Serial.println(F("CFG-RXM poll failed (timeout)"));
+    delay(5000);
+    return;
+  }
+
+  Serial.println(F("--- CFG-RXM ---"));
+  printRxm(&rxm);
+  Serial.println();
+
+  delay(5000);
+}
+
+/**************************************************************************/
+/* Helper functions                                                       */
+/**************************************************************************/
+
+void halt(const __FlashStringHelper *msg) {
+  Serial.print(F("HALT: "));
+  Serial.println(msg);
+  while (1)
+    delay(10);
+}
+
+void printTestResult(const __FlashStringHelper *name, bool pass) {
+  Serial.print(F("  ["));
+  Serial.print(pass ? F("PASS") : F("FAIL"));
   Serial.print(F("] "));
   Serial.print(name);
   Serial.print(F(": "));
 }
 
-void printRxm(UBX_CFG_RXM_t* rxm) {
+void printRxm(UBX_CFG_RXM_t *rxm) {
   Serial.print(F("  reserved1: "));
   Serial.println(rxm->reserved1);
   Serial.print(F("  lpMode: "));
@@ -49,7 +102,6 @@ void runTests() {
   Serial.println();
   Serial.println(F("Running CFG-RXM tests..."));
 
-  // Test 1: Poll current settings
   UBX_CFG_RXM_t rxm;
   bool poll_ok = ubx.pollCfgRxm(&rxm);
   printTestResult(F("poll_rxm"), poll_ok);
@@ -60,10 +112,8 @@ void runTests() {
     printRxm(&rxm);
   }
 
-  // Save original mode
   uint8_t originalMode = rxm.lpMode;
 
-  // Test 2: Set continuous mode (ensure known state)
   bool set_continuous = ubx.setPowerSave(false);
   delay(100);
   UBX_CFG_RXM_t verify;
@@ -74,7 +124,6 @@ void runTests() {
   if (set_continuous && verify_continuous)
     passed++;
 
-  // Test 3: Set power save mode
   bool set_powersave = ubx.setPowerSave(true);
   delay(100);
   ubx.pollCfgRxm(&verify);
@@ -84,7 +133,6 @@ void runTests() {
   if (set_powersave && verify_powersave)
     passed++;
 
-  // Test 4: Restore original mode
   bool restore = ubx.setPowerSave(originalMode == UBX_RXM_LPMODE_POWERSAVE);
   delay(100);
   ubx.pollCfgRxm(&verify);
@@ -105,43 +153,4 @@ void runTests() {
   Serial.println();
   Serial.println(F("NOTE: Power save mode requires additional CFG-PM2"));
   Serial.println(F("configuration for full effect."));
-}
-
-void setup() {
-  Serial.begin(115200);
-  while (!Serial)
-    delay(10);
-
-  Serial.println(F("UBX-CFG-RXM Message Test"));
-  Serial.println(F("========================="));
-
-  if (!ddc.begin()) {
-    Serial.println(F("FAIL: Could not connect to GPS module!"));
-    while (1)
-      delay(10);
-  }
-  Serial.println(F("GPS module connected on I2C"));
-
-  if (!ubx.begin()) {
-    Serial.println(F("FAIL: UBX parser init failed!"));
-    while (1)
-      delay(10);
-  }
-
-  delay(500);
-
-  UBXSendStatus status = ubx.setUBXOnly(UBX_PORT_DDC, true, 1000);
-  if (status != UBX_SEND_SUCCESS) {
-    Serial.print(F("WARNING: setUBXOnly status: "));
-    Serial.println(status);
-  } else {
-    Serial.println(F("UBX-only mode set on DDC port"));
-  }
-
-  runTests();
-  tests_run = true;
-}
-
-void loop() {
-  delay(1000);
 }

@@ -1,5 +1,5 @@
 /*!
- * @file cfg_cfg_test.ino
+ * @file 03_cfg_cfg_test.ino
  *
  * Message test: Use UBX-CFG-CFG to save/load configuration changes.
  *
@@ -12,13 +12,51 @@
 Adafruit_UBloxDDC ddc;
 Adafruit_UBX ubx(ddc);
 
-void printTestResult(const __FlashStringHelper* name, bool pass) {
-  Serial.print(F("  ["));
-  if (pass) {
-    Serial.print(F("PASS"));
-  } else {
-    Serial.print(F("FAIL"));
+void setup() {
+  Serial.begin(115200);
+  while (!Serial)
+    delay(10);
+
+  Serial.println(F("=== UBX-CFG-CFG Message Test ==="));
+
+  if (!initModule()) {
+    halt(F("Could not connect to GPS module on I2C"));
   }
+  Serial.println(F("GPS module connected on I2C"));
+
+  runTests();
+}
+
+void loop() {
+  UBX_CFG_RATE_t rate;
+
+  if (!ubx.getRate(&rate)) {
+    Serial.println(F("CFG-RATE poll failed (timeout)"));
+    delay(2000);
+    return;
+  }
+
+  Serial.print(F("Current rate: "));
+  Serial.print(rate.measRate);
+  Serial.println(F(" ms"));
+
+  delay(2000);
+}
+
+/**************************************************************************/
+/* Helper functions                                                       */
+/**************************************************************************/
+
+void halt(const __FlashStringHelper *msg) {
+  Serial.print(F("HALT: "));
+  Serial.println(msg);
+  while (1)
+    delay(10);
+}
+
+void printTestResult(const __FlashStringHelper *name, bool pass) {
+  Serial.print(F("  ["));
+  Serial.print(pass ? F("PASS") : F("FAIL"));
   Serial.print(F("] "));
   Serial.print(name);
   Serial.print(F(": "));
@@ -108,26 +146,4 @@ void runTests() {
   Serial.print(F("/"));
   Serial.print(total);
   Serial.println(F(" tests passed"));
-}
-
-void setup() {
-  Serial.begin(115200);
-  while (!Serial)
-    delay(10);
-
-  Serial.println(F("UBX-CFG-CFG Message Test"));
-  Serial.println(F("========================"));
-
-  if (!initModule()) {
-    Serial.println(F("FAIL: Could not connect to GPS module!"));
-    while (1)
-      delay(10);
-  }
-  Serial.println(F("GPS module connected on I2C"));
-
-  runTests();
-}
-
-void loop() {
-  delay(1000);
 }

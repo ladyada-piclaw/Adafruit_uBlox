@@ -1,5 +1,5 @@
 /*!
- * @file cfg_ant_test.ino
+ * @file 08_cfg_ant_test.ino
  *
  * Message test: Poll UBX-CFG-ANT, display antenna settings.
  *
@@ -14,19 +14,72 @@ Adafruit_UBX ubx(ddc);
 
 bool tests_run = false;
 
-void printTestResult(const __FlashStringHelper* name, bool pass) {
-  Serial.print(F("  ["));
-  if (pass) {
-    Serial.print(F("PASS"));
-  } else {
-    Serial.print(F("FAIL"));
+void setup() {
+  Serial.begin(115200);
+  while (!Serial)
+    delay(10);
+
+  Serial.println(F("=== UBX-CFG-ANT Message Test ==="));
+
+  if (!ddc.begin()) {
+    halt(F("Could not connect to GPS module on I2C"));
   }
+  Serial.println(F("GPS module connected on I2C"));
+
+  if (!ubx.begin()) {
+    halt(F("UBX parser init failed"));
+  }
+
+  delay(500);
+
+  UBXSendStatus status = ubx.setUBXOnly(UBX_PORT_DDC, true, 1000);
+  if (status != UBX_SEND_SUCCESS) {
+    Serial.print(F("WARNING: setUBXOnly status: "));
+    Serial.println(status);
+  } else {
+    Serial.println(F("UBX-only mode set on DDC port"));
+  }
+
+  runTests();
+  tests_run = true;
+}
+
+void loop() {
+  UBX_CFG_ANT_t ant;
+
+  if (!ubx.pollCfgAnt(&ant)) {
+    Serial.println(F("CFG-ANT poll failed (timeout)"));
+    delay(5000);
+    return;
+  }
+
+  Serial.println(F("--- CFG-ANT ---"));
+  printAntConfig(&ant);
+  Serial.println();
+
+  delay(5000);
+}
+
+/**************************************************************************/
+/* Helper functions                                                       */
+/**************************************************************************/
+
+void halt(const __FlashStringHelper *msg) {
+  Serial.print(F("HALT: "));
+  Serial.println(msg);
+  while (1)
+    delay(10);
+}
+
+void printTestResult(const __FlashStringHelper *name, bool pass) {
+  Serial.print(F("  ["));
+  Serial.print(pass ? F("PASS") : F("FAIL"));
   Serial.print(F("] "));
   Serial.print(name);
   Serial.print(F(": "));
 }
 
-void printAntConfig(UBX_CFG_ANT_t* ant) {
+void printAntConfig(UBX_CFG_ANT_t *ant) {
   Serial.print(F("  flags: 0x"));
   Serial.println(ant->flags, HEX);
   Serial.print(F("    svcs (supply voltage control): "));
@@ -59,7 +112,6 @@ void runTests() {
   Serial.println();
   Serial.println(F("Running tests..."));
 
-  // Test 1: Poll CFG-ANT
   UBX_CFG_ANT_t ant;
   bool poll_ok = ubx.pollCfgAnt(&ant);
   printTestResult(F("poll_cfg_ant"), poll_ok);
@@ -69,23 +121,22 @@ void runTests() {
     printAntConfig(&ant);
   }
 
-  // Test 2: Verify struct size
   bool size_ok = (sizeof(UBX_CFG_ANT_t) == 4);
   printTestResult(F("struct_size"), size_ok);
   Serial.print(sizeof(UBX_CFG_ANT_t));
   Serial.println(F(" bytes"));
-  if (size_ok) passed++;
+  if (size_ok)
+    passed++;
 
-  // Test 3: Set and verify (toggle recovery flag)
   if (poll_ok) {
     uint16_t original_flags = ant.flags;
     ant.flags ^= UBX_ANT_FLAG_RECOVERY;
     bool set_ok = ubx.setCfgAnt(&ant);
     printTestResult(F("set_cfg_ant"), set_ok);
     Serial.println(set_ok ? F("OK") : F("FAILED"));
-    if (set_ok) passed++;
+    if (set_ok)
+      passed++;
 
-    // Restore original
     ant.flags = original_flags;
     ubx.setCfgAnt(&ant);
   } else {
@@ -99,43 +150,4 @@ void runTests() {
   Serial.print(F("/"));
   Serial.print(total);
   Serial.println(F(" tests passed"));
-}
-
-void setup() {
-  Serial.begin(115200);
-  while (!Serial)
-    delay(10);
-
-  Serial.println(F("UBX-CFG-ANT Message Test"));
-  Serial.println(F("========================="));
-
-  if (!ddc.begin()) {
-    Serial.println(F("FAIL: Could not connect to GPS module!"));
-    while (1)
-      delay(10);
-  }
-  Serial.println(F("GPS module connected on I2C"));
-
-  if (!ubx.begin()) {
-    Serial.println(F("FAIL: UBX parser init failed!"));
-    while (1)
-      delay(10);
-  }
-
-  delay(500);
-
-  UBXSendStatus status = ubx.setUBXOnly(UBX_PORT_DDC, true, 1000);
-  if (status != UBX_SEND_SUCCESS) {
-    Serial.print(F("WARNING: setUBXOnly status: "));
-    Serial.println(status);
-  } else {
-    Serial.println(F("UBX-only mode set on DDC port"));
-  }
-
-  runTests();
-  tests_run = true;
-}
-
-void loop() {
-  delay(1000);
 }

@@ -1,7 +1,8 @@
 /*!
- * @file cfg_geofence_test.ino
+ * @file 11_cfg_geofence_test.ino
  *
- * Message test: Configure geofence around current position and verify status.
+ * Message test: Configure geofence and check status.
+ * Uses a test position; does not require a fix.
  *
  * Written by Limor 'ladyada' Fried with assistance from Claude Code
  */
@@ -12,146 +13,46 @@
 Adafruit_UBloxDDC ddc;
 Adafruit_UBX ubx(ddc);
 
-static const uint32_t FIX_TIMEOUT_MS = 120000;
-
 bool tests_run = false;
-bool fix_acquired = false;
-bool printed_continuous_header = false;
-uint32_t attempt = 0;
-unsigned long fix_start_ms = 0;
 
-// Store position for geofence
-int32_t fence_lat = 0;
-int32_t fence_lon = 0;
+void setup() {
+  Serial.begin(115200);
+  while (!Serial)
+    delay(10);
 
-void printTestResult(const __FlashStringHelper* name, bool pass) {
-  Serial.print(F("  ["));
-  Serial.print(pass ? F("PASS") : F("FAIL"));
-  Serial.print(F("] "));
-  Serial.print(name);
-  Serial.print(F(": "));
-}
+  Serial.println(F("=== UBX-CFG-GEOFENCE Message Test ==="));
 
-const char* getStateStr(uint8_t state) {
-  switch (state) {
-    case 0:
-      return "Unknown";
-    case 1:
-      return "Inside";
-    case 2:
-      return "Outside";
-    default:
-      return "Invalid";
+  if (!ddc.begin()) {
+    halt(F("Could not connect to GPS module on I2C"));
   }
-}
+  Serial.println(F("GPS module connected on I2C"));
 
-uint8_t runTests(int32_t lat, int32_t lon) {
-  uint8_t passed = 0;
-  const uint8_t total = 6;
+  if (!ubx.begin()) {
+    halt(F("UBX parser init failed"));
+  }
 
-  Serial.println();
-  Serial.println(F("Running CFG-GEOFENCE tests..."));
-
-  // Test 1: Clear any existing geofences
-  bool clear_ok = ubx.clearGeofence();
-  printTestResult(F("clear_geofence"), clear_ok);
-  Serial.println(clear_ok ? F("OK") : F("FAIL"));
-  if (clear_ok)
-    passed++;
-
-  delay(500);
-
-  // Test 2: Set a geofence around current position (100m radius)
-  // Radius is in cm, so 100m = 10000cm
-  bool set_ok = ubx.setGeofence(lat, lon, 10000, 2); // 95% confidence
-  printTestResult(F("set_geofence"), set_ok);
-  Serial.println(set_ok ? F("OK") : F("FAIL"));
-  if (set_ok)
-    passed++;
-
-  delay(500);
-
-  // Test 3: Poll CFG-GEOFENCE to verify configuration
-  UBX_CFG_GEOFENCE_header_t cfgHeader;
-  UBX_CFG_GEOFENCE_fence_t cfgFences[4];
-  uint8_t numFences = ubx.pollCfgGeofence(&cfgHeader, cfgFences, 4);
-  bool cfg_ok = (numFences == 1);
-  printTestResult(F("config_poll"), cfg_ok);
-  Serial.print(numFences);
-  Serial.println(F(" fence(s)"));
-  if (cfg_ok)
-    passed++;
-
-  // Test 4: Verify fence parameters
-  bool params_ok = false;
-  if (numFences > 0) {
-    params_ok = (cfgFences[0].lat == lat) && (cfgFences[0].lon == lon) &&
-                (cfgFences[0].radius == 10000);
-    printTestResult(F("fence_params"), params_ok);
-    Serial.print(F("lat="));
-    Serial.print(cfgFences[0].lat);
-    Serial.print(F(", lon="));
-    Serial.print(cfgFences[0].lon);
-    Serial.print(F(", radius="));
-    Serial.print(cfgFences[0].radius);
-    Serial.println(F(" cm"));
+  UBXSendStatus status = ubx.setUBXOnly(UBX_PORT_DDC, true, 1000);
+  if (status != UBX_SEND_SUCCESS) {
+    Serial.print(F("WARNING: setUBXOnly status: "));
+    Serial.println(status);
   } else {
-    printTestResult(F("fence_params"), false);
-    Serial.println(F("no fences"));
+    Serial.println(F("UBX-only mode set on DDC port"));
   }
-  if (params_ok)
-    passed++;
 
-  delay(1000); // Wait for status update
-
-  // Test 5: Poll NAV-GEOFENCE to check status
-  UBX_NAV_GEOFENCE_header_t navHeader;
-  UBX_NAV_GEOFENCE_fence_t navFences[4];
-  uint8_t statusFences = ubx.pollNavGeofence(&navHeader, navFences, 4);
-  bool status_ok = (statusFences >= 1) && (navHeader.status == 1);
-  printTestResult(F("status_poll"), status_ok);
-  Serial.print(F("status="));
-  Serial.print(navHeader.status);
-  Serial.print(F(", fences="));
-  Serial.println(statusFences);
-  if (status_ok)
-    passed++;
-
-  // Test 6: We should be inside the fence (if we set it around our position)
-  bool inside_ok = false;
-  if (statusFences > 0) {
-    inside_ok = (navFences[0].state == 1); // 1 = Inside
-    printTestResult(F("inside_fence"), inside_ok);
-    Serial.print(F("state="));
-    Serial.print(navFences[0].state);
-    Serial.print(F(" ("));
-    Serial.print(getStateStr(navFences[0].state));
-    Serial.println(F(")"));
-  } else {
-    printTestResult(F("inside_fence"), false);
-    Serial.println(F("no status"));
-  }
-  if (inside_ok)
-    passed++;
-
-  // Clean up: clear geofence
-  ubx.clearGeofence();
-
-  Serial.println();
-  Serial.print(F("Results: "));
-  Serial.print(passed);
-  Serial.print(F("/"));
-  Serial.print(total);
-  Serial.println(F(" tests passed"));
-
-  return passed;
+  runTests();
+  tests_run = true;
 }
 
-void printGeofenceStatus() {
+void loop() {
   UBX_NAV_GEOFENCE_header_t header;
   UBX_NAV_GEOFENCE_fence_t fences[4];
 
   uint8_t numFences = ubx.pollNavGeofence(&header, fences, 4);
+  if (numFences == 0 && header.status == 0) {
+    Serial.println(F("NAV-GEOFENCE: no active geofence"));
+    delay(5000);
+    return;
+  }
 
   Serial.println(F("--- NAV-GEOFENCE ---"));
   Serial.print(F("iTOW: "));
@@ -182,95 +83,105 @@ void printGeofenceStatus() {
   }
 
   Serial.println();
+  delay(2000);
 }
 
-void setup() {
-  Serial.begin(115200);
-  while (!Serial)
+/**************************************************************************/
+/* Helper functions                                                       */
+/**************************************************************************/
+
+void halt(const __FlashStringHelper *msg) {
+  Serial.print(F("HALT: "));
+  Serial.println(msg);
+  while (1)
     delay(10);
+}
 
-  Serial.println(F("=== UBX-CFG-GEOFENCE Message Test ==="));
+void printTestResult(const __FlashStringHelper *name, bool pass) {
+  Serial.print(F("  ["));
+  Serial.print(pass ? F("PASS") : F("FAIL"));
+  Serial.print(F("] "));
+  Serial.print(name);
+  Serial.print(F(": "));
+}
 
-  if (!ddc.begin()) {
-    Serial.println(F("FAIL: Could not connect to GPS module!"));
-    while (1)
-      delay(10);
+const char *getStateStr(uint8_t state) {
+  switch (state) {
+    case 0:
+      return "Unknown";
+    case 1:
+      return "Inside";
+    case 2:
+      return "Outside";
+    default:
+      return "Invalid";
   }
-  Serial.println(F("GPS module connected on I2C"));
+}
 
-  if (!ubx.begin()) {
-    Serial.println(F("FAIL: UBX parser init failed!"));
-    while (1)
-      delay(10);
-  }
-
-  UBXSendStatus status = ubx.setUBXOnly(UBX_PORT_DDC, true, 1000);
-  if (status != UBX_SEND_SUCCESS) {
-    Serial.print(F("WARNING: setUBXOnly status: "));
-    Serial.println(status);
-  } else {
-    Serial.println(F("UBX-only mode set on DDC port"));
-  }
+void runTests() {
+  uint8_t passed = 0;
+  const uint8_t total = 4;
 
   Serial.println();
-  fix_start_ms = millis();
-}
+  Serial.println(F("Running CFG-GEOFENCE tests..."));
 
-void loop() {
-  UBX_NAV_PVT_t pvt;
+  // Use a test position (New York City area)
+  int32_t test_lat = 407128000;  // 40.7128 deg * 1e7
+  int32_t test_lon = -740060000; // -74.0060 deg * 1e7
 
-  if (!tests_run) {
-    attempt++;
-    bool got = ubx.poll(UBX_CLASS_NAV, UBX_NAV_PVT, &pvt, sizeof(pvt));
+  bool clear_ok = ubx.clearGeofence();
+  printTestResult(F("clear_geofence"), clear_ok);
+  Serial.println(clear_ok ? F("OK") : F("FAIL"));
+  if (clear_ok)
+    passed++;
 
-    if (attempt == 1) {
-      Serial.println(F("Waiting for 3D fix (need position for geofence)..."));
-    } else {
-      Serial.print(F("Waiting for fix... (attempt "));
-      Serial.print(attempt);
-      if (got) {
-        Serial.print(F(", fixType="));
-        Serial.print(pvt.fixType);
-        Serial.print(F(", sats="));
-        Serial.print(pvt.numSV);
-        Serial.println(F(")"));
-      } else {
-        Serial.println(F(", poll failed)"));
-      }
-    }
+  delay(500);
 
-    if (got && pvt.fixType == 3 && (pvt.flags & 0x01)) {
-      fix_acquired = true;
-      fence_lat = pvt.lat;
-      fence_lon = pvt.lon;
+  // Set a geofence (100m = 10000cm radius)
+  bool set_ok = ubx.setGeofence(test_lat, test_lon, 10000, 2);
+  printTestResult(F("set_geofence"), set_ok);
+  Serial.println(set_ok ? F("OK") : F("FAIL"));
+  if (set_ok)
+    passed++;
 
-      Serial.print(F("Fix acquired at lat="));
-      Serial.print(fence_lat / 10000000.0, 7);
-      Serial.print(F(", lon="));
-      Serial.println(fence_lon / 10000000.0, 7);
+  delay(500);
 
-      runTests(fence_lat, fence_lon);
-      tests_run = true;
-      printed_continuous_header = false;
-      delay(2000);
-      return;
-    }
+  UBX_CFG_GEOFENCE_header_t cfgHeader;
+  UBX_CFG_GEOFENCE_fence_t cfgFences[4];
+  uint8_t numFences = ubx.pollCfgGeofence(&cfgHeader, cfgFences, 4);
+  bool cfg_ok = (numFences == 1);
+  printTestResult(F("config_poll"), cfg_ok);
+  Serial.print(numFences);
+  Serial.println(F(" fence(s)"));
+  if (cfg_ok)
+    passed++;
 
-    if (millis() - fix_start_ms > FIX_TIMEOUT_MS) {
-      Serial.println(F("Timeout waiting for 3D fix after 120 seconds."));
-      tests_run = true;
-    }
-
-    delay(1000);
-    return;
+  bool params_ok = false;
+  if (numFences > 0) {
+    params_ok = (cfgFences[0].lat == test_lat) && (cfgFences[0].lon == test_lon) &&
+                (cfgFences[0].radius == 10000);
+    printTestResult(F("fence_params"), params_ok);
+    Serial.print(F("lat="));
+    Serial.print(cfgFences[0].lat);
+    Serial.print(F(", lon="));
+    Serial.print(cfgFences[0].lon);
+    Serial.print(F(", radius="));
+    Serial.print(cfgFences[0].radius);
+    Serial.println(F(" cm"));
+  } else {
+    printTestResult(F("fence_params"), false);
+    Serial.println(F("no fences"));
   }
+  if (params_ok)
+    passed++;
 
-  if (!printed_continuous_header) {
-    Serial.println();
-    Serial.println(F("Continuous output (geofence cleared):"));
-    printed_continuous_header = true;
-  }
+  // Clean up
+  ubx.clearGeofence();
 
-  printGeofenceStatus();
-  delay(2000);
+  Serial.println();
+  Serial.print(F("Results: "));
+  Serial.print(passed);
+  Serial.print(F("/"));
+  Serial.print(total);
+  Serial.println(F(" tests passed"));
 }

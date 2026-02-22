@@ -1,5 +1,5 @@
 /*!
- * @file cfg_rate_test.ino
+ * @file 01_cfg_rate_test.ino
  *
  * Message test: Poll UBX-CFG-RATE, validate defaults,
  * then set 5 Hz and 10 Hz rates, restore 1 Hz, and stream NAV-PVT.
@@ -17,19 +17,77 @@ bool tests_run = false;
 uint16_t current_rate_ms = 1000;
 uint32_t last_pvt_ms = 0;
 
-void printTestResult(const __FlashStringHelper* name, bool pass) {
-  Serial.print(F("  ["));
-  if (pass) {
-    Serial.print(F("PASS"));
-  } else {
-    Serial.print(F("FAIL"));
+void setup() {
+  Serial.begin(115200);
+  while (!Serial)
+    delay(10);
+
+  Serial.println(F("=== UBX-CFG-RATE Message Test ==="));
+
+  if (!ddc.begin()) {
+    halt(F("Could not connect to GPS module on I2C"));
   }
+  Serial.println(F("GPS module connected on I2C"));
+
+  if (!ubx.begin()) {
+    halt(F("UBX parser init failed"));
+  }
+
+  delay(500);
+
+  UBXSendStatus status = ubx.setUBXOnly(UBX_PORT_DDC, true, 1000);
+  if (status != UBX_SEND_SUCCESS) {
+    Serial.print(F("WARNING: setUBXOnly status: "));
+    Serial.println(status);
+  } else {
+    Serial.println(F("UBX-only mode set on DDC port"));
+  }
+
+  runTests();
+  tests_run = true;
+  last_pvt_ms = millis();
+  Serial.println();
+  Serial.println(F("Streaming NAV-PVT timestamps..."));
+}
+
+void loop() {
+  UBX_NAV_PVT_t pvt;
+  if (ubx.poll(UBX_CLASS_NAV, UBX_NAV_PVT, &pvt, sizeof(pvt))) {
+    uint32_t now = millis();
+    uint32_t delta = now - last_pvt_ms;
+    last_pvt_ms = now;
+    Serial.print(F("NAV-PVT iTOW: "));
+    Serial.print(pvt.iTOW);
+    Serial.print(F(" ms, delta: "));
+    Serial.print(delta);
+    Serial.print(F(" ms (target "));
+    Serial.print(current_rate_ms);
+    Serial.println(F(" ms)"));
+  } else {
+    Serial.println(F("NAV-PVT poll timeout"));
+  }
+}
+
+/**************************************************************************/
+/* Helper functions                                                       */
+/**************************************************************************/
+
+void halt(const __FlashStringHelper *msg) {
+  Serial.print(F("HALT: "));
+  Serial.println(msg);
+  while (1)
+    delay(10);
+}
+
+void printTestResult(const __FlashStringHelper *name, bool pass) {
+  Serial.print(F("  ["));
+  Serial.print(pass ? F("PASS") : F("FAIL"));
   Serial.print(F("] "));
   Serial.print(name);
   Serial.print(F(": "));
 }
 
-bool getRateSafe(UBX_CFG_RATE_t* rate) {
+bool getRateSafe(UBX_CFG_RATE_t *rate) {
   if (!ubx.getRate(rate)) {
     Serial.println(F("CFG-RATE poll failed"));
     return false;
@@ -37,7 +95,7 @@ bool getRateSafe(UBX_CFG_RATE_t* rate) {
   return true;
 }
 
-bool setAndVerify(uint16_t rate_ms, const __FlashStringHelper* label) {
+bool setAndVerify(uint16_t rate_ms, const __FlashStringHelper *label) {
   if (!ubx.setRate(rate_ms)) {
     printTestResult(label, false);
     Serial.println(F("setRate failed"));
@@ -94,60 +152,4 @@ void runTests() {
   Serial.print(F("/"));
   Serial.print(total);
   Serial.println(F(" tests passed"));
-}
-
-void setup() {
-  Serial.begin(115200);
-  while (!Serial)
-    delay(10);
-
-  Serial.println(F("UBX-CFG-RATE Message Test"));
-  Serial.println(F("=========================="));
-
-  if (!ddc.begin()) {
-    Serial.println(F("FAIL: Could not connect to GPS module!"));
-    while (1)
-      delay(10);
-  }
-  Serial.println(F("GPS module connected on I2C"));
-
-  if (!ubx.begin()) {
-    Serial.println(F("FAIL: UBX parser init failed!"));
-    while (1)
-      delay(10);
-  }
-
-  delay(500); // Give GPS module time to stabilize after boot
-
-  UBXSendStatus status = ubx.setUBXOnly(UBX_PORT_DDC, true, 1000);
-  if (status != UBX_SEND_SUCCESS) {
-    Serial.print(F("WARNING: setUBXOnly status: "));
-    Serial.println(status);
-  } else {
-    Serial.println(F("UBX-only mode set on DDC port"));
-  }
-
-  runTests();
-  tests_run = true;
-  last_pvt_ms = millis();
-  Serial.println();
-  Serial.println(F("Streaming NAV-PVT timestamps..."));
-}
-
-void loop() {
-  UBX_NAV_PVT_t pvt;
-  if (ubx.poll(UBX_CLASS_NAV, UBX_NAV_PVT, &pvt, sizeof(pvt))) {
-    uint32_t now = millis();
-    uint32_t delta = now - last_pvt_ms;
-    last_pvt_ms = now;
-    Serial.print(F("NAV-PVT iTOW: "));
-    Serial.print(pvt.iTOW);
-    Serial.print(F(" ms, delta: "));
-    Serial.print(delta);
-    Serial.print(F(" ms (target "));
-    Serial.print(current_rate_ms);
-    Serial.println(F(" ms)"));
-  } else {
-    Serial.println(F("NAV-PVT poll timeout"));
-  }
 }

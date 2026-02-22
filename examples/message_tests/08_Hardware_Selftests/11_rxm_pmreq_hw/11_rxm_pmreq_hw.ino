@@ -1,7 +1,9 @@
 /*!
- * @file rxm_pmreq_hw.ino
+ * @file 11_rxm_pmreq_hw.ino
  * @brief Hardware test for RXM-PMREQ (Power Management Request)
  * NOTE: This test only validates struct sizes, does NOT sleep the module!
+ *
+ * Written by Limor 'ladyada' Fried with assistance from Claude Code
  */
 
 #include <Adafruit_UBX.h>
@@ -12,21 +14,24 @@ Adafruit_UBX ubx(ddc);
 
 void setup() {
   Serial.begin(115200);
-  while (!Serial) delay(10);
+  while (!Serial)
+    delay(10);
 
-  Serial.println(F("RXM-PMREQ Hardware Test"));
-  Serial.println(F("======================="));
+  Serial.println(F("=== RXM-PMREQ Hardware Test ==="));
   Serial.println(F("NOTE: Not sending sleep commands!"));
 
   if (!ddc.begin()) {
-    Serial.println(F("FAIL: GPS not found"));
-    while (1) delay(10);
+    halt(F("GPS not found on I2C"));
   }
-  ubx.begin();
+  Serial.println(F("GPS module connected"));
+
+  if (!ubx.begin()) {
+    halt(F("UBX parser init failed"));
+  }
+
   delay(500);
   ubx.setUBXOnly(UBX_PORT_DDC, true, 1000);
 
-  // Verify struct sizes
   if (sizeof(UBX_RXM_PMREQ_t) == 8) {
     Serial.println(F("PASS: v0 struct size = 8"));
   } else {
@@ -39,7 +44,6 @@ void setup() {
     Serial.println(F("FAIL: v1 struct size wrong"));
   }
 
-  // Verify module is still responding (we didn't accidentally sleep it)
   UBX_NAV_PVT_t pvt;
   if (ubx.poll(UBX_CLASS_NAV, UBX_NAV_PVT, &pvt, sizeof(pvt))) {
     Serial.println(F("PASS: Module still responding"));
@@ -53,4 +57,15 @@ void setup() {
 
 void loop() {
   delay(1000);
+}
+
+/**************************************************************************/
+/* Helper functions                                                       */
+/**************************************************************************/
+
+void halt(const __FlashStringHelper *msg) {
+  Serial.print(F("HALT: "));
+  Serial.println(msg);
+  while (1)
+    delay(10);
 }
