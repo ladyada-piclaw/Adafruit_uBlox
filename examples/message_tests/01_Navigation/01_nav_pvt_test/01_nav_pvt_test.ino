@@ -74,12 +74,12 @@ void loop() {
   Serial.print(F(" resolved="));
   Serial.println((pvt.valid >> 2) & 0x01);
 
-  // Position
+  // Position (last 4 digits blanked for privacy)
   Serial.print(F("Lat: "));
-  Serial.print(pvt.lat * 1e-7, 7);
+  printCoordRedacted(pvt.lat * 1e-7);
   Serial.println(F(" deg"));
   Serial.print(F("Lon: "));
-  Serial.print(pvt.lon * 1e-7, 7);
+  printCoordRedacted(pvt.lon * 1e-7);
   Serial.println(F(" deg"));
   Serial.print(F("Height: "));
   Serial.print(pvt.hMSL / 1000.0, 1);
@@ -121,6 +121,15 @@ void halt(const __FlashStringHelper *msg) {
   Serial.println(msg);
   while (1)
     delay(10);
+}
+
+/*!
+ * @brief Print a coordinate with last 4 digits replaced by xxxx.
+ */
+void printCoordRedacted(double coord) {
+  // Print with 3 decimal places, then append "xxxx"
+  Serial.print(coord, 3);
+  Serial.print(F("xxxx"));
 }
 
 /*!
